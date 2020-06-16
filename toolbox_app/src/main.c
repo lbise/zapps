@@ -163,6 +163,28 @@ static int cmd_sock_listen(const struct shell *shell, size_t argc, char *argv[])
 	return 0;
 }
 
+static int cmd_sock_close(const struct shell *shell, size_t argc, char *argv[])
+{
+	/* sock close <fd> */
+	int arg = 1;
+	int fd;
+	int err;
+
+	if (argc < 2) {
+		return -ENOEXEC;
+	}
+
+	fd = strtoul(argv[arg++], NULL, 10);
+
+	err = close(fd);
+	if (err) {
+		LOG_ERR("Cannot close (%d)", -errno);
+		return -ENOEXEC;
+	}
+
+	return 0;
+}
+
 SHELL_STATIC_SUBCMD_SET_CREATE(sock_commands,
 	SHELL_CMD(new, NULL, "'sock new <family inet|inet6> <type stream|dgram>"
 			     "<proto tcp|tls_1_2>' Create a new socket",
@@ -176,7 +198,9 @@ SHELL_STATIC_SUBCMD_SET_CREATE(sock_commands,
 	SHELL_CMD(listen, NULL, "'sock listen <fd> <max client>'"
 			     "Make a socket listen",
 		  cmd_sock_listen),
-
+	SHELL_CMD(close, NULL, "'sock close <fd>'"
+			     "Close a socket",
+		  cmd_sock_close),
 
 	SHELL_SUBCMD_SET_END
 );
