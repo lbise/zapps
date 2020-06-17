@@ -18,6 +18,8 @@ LOG_MODULE_REGISTER(toolbox, LOG_LEVEL_DBG);
 #include "certificate.h"
 
 #define RECV_BUF_SIZE 1024
+#define MAX_NB_POLL 10
+#define MSG_SIZE 256
 
 static int cmd_sock_new(const struct shell *shell, size_t argc, char *argv[])
 {
@@ -293,6 +295,61 @@ static int cmd_sock_recv(const struct shell *shell, size_t argc, char *argv[])
 	return 0;
 }
 
+static int cmd_sock_poll(const struct shell *shell, size_t argc, char *argv[])
+{
+	/* sock poll <timeout> <in|inout|out> <nfd> <fd1> <fd2> ..<fdn> */
+	int arg = 1;
+	int nfd;
+	int timeout;
+	int events = POLLERR | POLLHUP | POLLNVAL;
+	struct pollfd pollfds[MAX_NB_POLL];
+	int err;
+
+	if (argc < 5) {
+		return -ENOEXEC;
+	}
+
+	timeout = strtoul(argv[arg++], NULL, 10);
+
+	if (strncmp(argv[arg], "inout", 5) == 0) {
+		events |= POLLIN;
+		events |= POLLOUT;
+	} else if (strncmp(argv[arg], "in", 2) == 0) {
+		events |= POLLIN;
+	} else if (strncmp(argv[arg], "out", 2) == 0) {
+		events |= POLLOUT;
+	}
+
+	arg++;
+
+	nfd = strtoul(argv[arg++], NULL, 10);
+	if ((nfd + 4) != argc) {
+		LOG_ERR("Invalid number of parameters provided");
+		return -ENOEXEC;
+	}
+
+	for (int i = 0; i < nfd; i++) {
+		pollfds[i].fd = strtoul(argv[arg++], NULL, 10);
+		pollfds[i].events = events;
+	}
+
+	LOG_INF("Polling %d file descriptors for 0x%x", nfd, events);
+
+	err = poll(pollfds, nfd, timeout);
+	if (err < 0) {
+		LOG_ERR("Cannot poll (%d)", -errno);
+		return -errno;
+	}
+
+	for (int i = 0; i < nfd; i++) {
+		LOG_INF("fd=%d events=0x%x revents=0x%x", pollfds[i].fd,
+			pollfds[i].events,
+			pollfds[i].revents);
+	}
+
+	return 0;
+}
+
 static int cmd_sock_tlsopt(const struct shell *shell, size_t argc, char *argv[])
 {
 #if defined(CONFIG_NET_SOCKETS_SOCKOPT_TLS)
@@ -375,6 +432,9 @@ SHELL_STATIC_SUBCMD_SET_CREATE(sock_commands,
 	SHELL_CMD(recv, NULL, "'sock recv <fd>' "
 			     "Receive data",
 		  cmd_sock_recv),
+	SHELL_CMD(poll, NULL, "'sock poll <timeout> <in|inout|out> <nfd> <fd1> <fd2> ..<fdn>' "
+			     "Poll file descriptors",
+		  cmd_sock_poll),
 	SHELL_CMD(tlsopt, NULL, "'sock tlsopt <fd> <srv|cli>' "
 			     "Set TLS related options",
 		  cmd_sock_tlsopt),
