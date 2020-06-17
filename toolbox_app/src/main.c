@@ -7,14 +7,17 @@
 LOG_MODULE_REGISTER(toolbox, LOG_LEVEL_DBG);
 
 #include <zephyr.h>
+#include <stdio.h>
 #include <shell/shell.h>
 #include <net/socket.h>
 #include <net/tls_credentials.h>
 #include "net_private.h"
 
-/* Used signed certificates */
+/* Use signed certificates */
 #define SIGNED_CERTS
 #include "certificate.h"
+
+#define RECV_BUF_SIZE 1024
 
 static int cmd_sock_new(const struct shell *shell, size_t argc, char *argv[])
 {
@@ -100,6 +103,8 @@ static int cmd_sock_connect(const struct shell *shell, size_t argc, char *argv[]
 		LOG_ERR("Cannot connect to %s (%d)", addr_str, -errno);
 		return -ENOEXEC;
 	}
+
+	LOG_INF("Connected fd=%d to %s", fd, addr_str);
 
 	return 0;
 }
@@ -219,6 +224,75 @@ static int cmd_sock_close(const struct shell *shell, size_t argc, char *argv[])
 	return 0;
 }
 
+static ssize_t sendall(int sock, const void *buf, size_t len)
+{
+	while (len) {
+		ssize_t out_len = send(sock, buf, len, 0);
+
+		if (out_len < 0) {
+			return out_len;
+		}
+		buf = (const char *)buf + out_len;
+		len -= out_len;
+	}
+
+	return 0;
+}
+
+static int cmd_sock_send(const struct shell *shell, size_t argc, char *argv[])
+{
+	/* sock send <fd> <data> */
+	int arg = 1;
+	int fd;
+	ssize_t size;
+
+	if (argc < 3) {
+		return -ENOEXEC;
+	}
+
+	fd = strtoul(argv[arg++], NULL, 10);
+
+	LOG_INF("Sending %d bytes to fd=%d", strlen(argv[arg]), fd);
+	size = sendall(fd, argv[arg], strlen(argv[arg]));
+	if (size < 0) {
+		LOG_ERR("Cannot send (%d)", size);
+		return -ENOEXEC;
+	}
+
+	return 0;
+}
+
+static int cmd_sock_recv(const struct shell *shell, size_t argc, char *argv[])
+{
+	/* sock recv <fd> */
+	int arg = 1;
+	int fd;
+	ssize_t size;
+	static uint8_t buf[RECV_BUF_SIZE];
+
+	if (argc < 2) {
+		return -ENOEXEC;
+	}
+
+	fd = strtoul(argv[arg++], NULL, 10);
+
+	size = recv(fd, buf, sizeof(buf) - 1, 0);
+	if (size < 0) {
+		LOG_ERR("Cannot receive (%d)", size);
+		return -ENOEXEC;
+	}
+
+	/* Ensure buffer is NULL terminated */
+	buf[size] = '\0';
+
+	LOG_INF("Received %d bytes from fd=%d", size, fd);
+
+	shell_print(shell, "\"%s\"", buf);
+	shell_hexdump(shell, buf, size);
+
+	return 0;
+}
+
 static int cmd_sock_tlsopt(const struct shell *shell, size_t argc, char *argv[])
 {
 #if defined(CONFIG_NET_SOCKETS_SOCKOPT_TLS)
@@ -295,6 +369,12 @@ SHELL_STATIC_SUBCMD_SET_CREATE(sock_commands,
 	SHELL_CMD(close, NULL, "'sock close <fd>' "
 			     "Close a socket",
 		  cmd_sock_close),
+	SHELL_CMD(send, NULL, "'sock send <fd> <data>' "
+			     "Send data",
+		  cmd_sock_send),
+	SHELL_CMD(recv, NULL, "'sock recv <fd>' "
+			     "Receive data",
+		  cmd_sock_recv),
 	SHELL_CMD(tlsopt, NULL, "'sock tlsopt <fd> <srv|cli>' "
 			     "Set TLS related options",
 		  cmd_sock_tlsopt),
