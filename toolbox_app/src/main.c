@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012-2014 Wind River Systems, Inc.
+ * Copyright (c) 2020 Léonard Bise
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -10,31 +10,25 @@ LOG_MODULE_REGISTER(toolbox, LOG_LEVEL_DBG);
 #include <shell/shell.h>
 #include <net/socket.h>
 
-struct sock_data {
-	int fd;
-	int family;
-	int type;
-	int proto;
-};
 
-struct sock_data data = {
-	.fd = -1
-
-};
 
 static int cmd_sock_new(const struct shell *shell, size_t argc, char *argv[])
 {
 	/* sock new <family> <type> <proto> */
 	int arg = 1;
+	int fd;
+	int family;
+	int type;
+	int proto;
 
 	if (argc < 4) {
 		return -ENOEXEC;
 	}
 
 	if (strncmp(argv[arg], "inet", 5) == 0) {
-		data.family = AF_INET;
+		family = AF_INET;
 	} else if (strncmp(argv[arg], "inet6", 6) == 0) {
-		data.family = AF_INET6;
+		family = AF_INET6;
 	} else {
 		LOG_ERR("Unsupported socket family %s", argv[arg]);
 		return -ENOEXEC;
@@ -43,9 +37,9 @@ static int cmd_sock_new(const struct shell *shell, size_t argc, char *argv[])
 	arg++;
 
 	if (strncmp(argv[arg], "stream", 6) == 0) {
-		data.type = SOCK_STREAM;
+		type = SOCK_STREAM;
 	} else if (strncmp(argv[arg], "dgram", 5) == 0) {
-		data.type = SOCK_DGRAM;
+		type = SOCK_DGRAM;
 	} else {
 		LOG_ERR("Unsupported socket type %s", argv[arg]);
 		return -ENOEXEC;
@@ -54,9 +48,9 @@ static int cmd_sock_new(const struct shell *shell, size_t argc, char *argv[])
 	arg++;
 
 	if (strncmp(argv[arg], "tcp", 3) == 0) {
-		data.proto = IPPROTO_TCP;
+		proto = IPPROTO_TCP;
 	} else if (strncmp(argv[arg], "tls_1_2", 5) == 0) {
-		data.proto = IPPROTO_TLS_1_2;
+		proto = IPPROTO_TLS_1_2;
 	} else {
 		LOG_ERR("Unsupported socket proto %s", argv[arg]);
 		return -ENOEXEC;
@@ -64,14 +58,13 @@ static int cmd_sock_new(const struct shell *shell, size_t argc, char *argv[])
 
 	arg++;
 
-	data.fd = socket(data.family, data.type, data.proto);
-	if (data.fd < 0) {
+	fd = socket(family, type, proto);
+	if (fd < 0) {
 		LOG_ERR("Cannot create new socket %d", errno);
-		data.fd = -1;
 		return errno;
 	}
 
-	LOG_INF("Created socket fd=%d", data.fd);
+	LOG_INF("Created socket fd=%d", fd);
 
 	return 0;
 }
