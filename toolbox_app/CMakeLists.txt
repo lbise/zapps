@@ -22,3 +22,7 @@ foreach(inc_file
     ${gen_dir}/${inc_file}.inc
     )
 endforeach()
+
+zephyr_include_directories(
+        $ENV{ZEPHYR_BASE}/subsys/net/ip
+        )
