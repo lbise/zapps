@@ -9,8 +9,11 @@ LOG_MODULE_REGISTER(toolbox, LOG_LEVEL_DBG);
 #include <zephyr.h>
 #include <shell/shell.h>
 #include <net/socket.h>
+#include <net/tls_credentials.h>
 
-
+/* Used signed certificates */
+#define SIGNED_CERTS
+#include "certificate.h"
 
 static int cmd_sock_new(const struct shell *shell, size_t argc, char *argv[])
 {
@@ -178,6 +181,63 @@ static int cmd_sock_close(const struct shell *shell, size_t argc, char *argv[])
 	return 0;
 }
 
+static int cmd_sock_tlsopt(const struct shell *shell, size_t argc, char *argv[])
+{
+#if defined(CONFIG_NET_SOCKETS_SOCKOPT_TLS)
+	/* sock tlsopt <fd> <srv|cli> */
+	int arg = 1;
+	int fd;
+	bool srv;
+	int err;
+
+	if (argc < 3) {
+		return -ENOEXEC;
+	}
+
+	fd = strtoul(argv[arg++], NULL, 10);
+
+	if (strncmp(argv[arg], "srv", 3) == 0) {
+		srv = true;
+	} else if (strncmp(argv[arg], "cli", 3) == 0) {
+		srv = false;
+	} else {
+		LOG_ERR("Unknown type %s", argv[arg]);
+		return -ENOEXEC;
+	}
+
+	sec_tag_t sec_tag_list[] = {
+		CERTIFICATE_TAG,
+#if defined(CONFIG_MBEDTLS_KEY_EXCHANGE_PSK_ENABLED)
+		PSK_TAG,
+#endif
+	};
+
+	err = setsockopt(fd, SOL_TLS, TLS_SEC_TAG_LIST,
+			 sec_tag_list, sizeof(sec_tag_list));
+	if (err < 0) {
+		LOG_ERR("Failed to set TCP secure option (%d)", -errno);
+		return -errno;
+	}
+
+	if (!srv) {
+		err = setsockopt(fd, SOL_TLS, TLS_HOSTNAME,
+				 TLS_PEER_HOSTNAME, sizeof(TLS_PEER_HOSTNAME));
+		if (err < 0) {
+			LOG_ERR("Failed to set TLS_HOSTNAME option (%d)",
+				-errno);
+			return -errno;
+		}
+	}
+
+	LOG_INF("Set TLS socket options for %d", fd);
+
+	return 0;
+#else
+	LOG_ERR("CONFIG_NET_SOCKETS_SOCKOPT_TLS not enabled");
+	return -ENOTSUP;
+#endif
+}
+
 SHELL_STATIC_SUBCMD_SET_CREATE(sock_commands,
 	SHELL_CMD(new, NULL, "'sock new <family inet|inet6> <type stream|dgram>"
 			     "<proto tcp|tls_1_2>' Create a new socket",
@@ -194,6 +254,9 @@ SHELL_STATIC_SUBCMD_SET_CREATE(sock_commands,
 	SHELL_CMD(close, NULL, "'sock close <fd>'"
 			     "Close a socket",
 		  cmd_sock_close),
+	SHELL_CMD(tlsopt, NULL, "'sock tlsopt <fd> <srv|cli>'"
+			     "Set TLS related options",
+		  cmd_sock_tlsopt),
 
 	SHELL_SUBCMD_SET_END
 );
@@ -203,5 +266,57 @@ SHELL_CMD_REGISTER(sock, &sock_commands, "Sockets commands", NULL);
 void main(void)
 {
 
+#if defined(CONFIG_NET_SOCKETS_SOCKOPT_TLS)
+	int err;
+
+#if defined(SIGNED_CERTS)
+	err = tls_credential_add(CERTIFICATE_TAG,
+				 TLS_CREDENTIAL_CA_CERTIFICATE,
+				 ca_certificate,
+				 sizeof(ca_certificate));
+	if (err < 0) {
+		LOG_ERR("Failed to register CA certificate: %d", err);
+		return;
+	}
+#endif
+
+	err = tls_credential_add(CERTIFICATE_TAG,
+				 TLS_CREDENTIAL_SERVER_CERTIFICATE,
+				 server_certificate,
+				 sizeof(server_certificate));
+	if (err < 0) {
+		LOG_ERR("Failed to register public certificate: %d", err);
+		return;
+	}
+
+
+	err = tls_credential_add(CERTIFICATE_TAG,
+				 TLS_CREDENTIAL_PRIVATE_KEY,
+				 private_key, sizeof(private_key));
+	if (err < 0) {
+		LOG_ERR("Failed to register private key: %d", err);
+		return;
+	}
+
+#if defined(CONFIG_MBEDTLS_KEY_EXCHANGE_PSK_ENABLED)
+	err = tls_credential_add(PSK_TAG,
+				TLS_CREDENTIAL_PSK,
+				psk,
+				sizeof(psk));
+	if (err < 0) {
+		LOG_ERR("Failed to register PSK: %d", err);
+		return;
+	}
+	err = tls_credential_add(PSK_TAG,
+				TLS_CREDENTIAL_PSK_ID,
+				psk_id,
+				sizeof(psk_id) - 1);
+	if (err < 0) {
+		LOG_ERR("Failed to register PSK ID: %d", err);
+		return;
+	}
+#endif
+
+#endif
 
 }
